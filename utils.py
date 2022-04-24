@@ -4,9 +4,9 @@ import PySimpleGUI as sg
 
 
 class computer:  # define a class of computer
-    def __init__(self, rank, system, Cores, Rmax, Rpeak, Power):  # a computer  has these 6 elements
-        self.rank = rank
-        self.system = system
+    def __init__(self, Rank, System, Cores, Rmax, Rpeak, Power):  # a computer  has these 6 elements
+        self.Rank = Rank
+        self.System = System
         self.Cores = Cores
         self.Rmax = Rmax
         self.Rpeak = Rpeak
@@ -30,16 +30,16 @@ def get_rows():  # get the data from the web
             cpt = computer(data[0].getText(), data[1].getText(), data[2].getText(
             ), data[3].getText(), data[4].getText(), data[5].getText())
             # deal with the text we get to make datas more good-looking
-            cpt.system = cpt.system.replace(
+            cpt.System = cpt.System.replace(
                 '\n', '').replace(' ', '').replace(',', ', ')
             cpt.Cores = cpt.Cores.replace(',', '')
             cpt.Rmax = cpt.Rmax.replace(',', '')
             cpt.Rpeak = cpt.Rpeak.replace(',', '')
             cpt.Power = cpt.Power.replace(',', '')
             # add the data to the list rows
-            rows.append([cpt.rank, cpt.system, cpt.Cores,
+            rows.append([cpt.Rank, cpt.System, cpt.Cores,
                         cpt.Rmax, cpt.Rpeak, cpt.Power])
-            mrows = [cpt.rank, cpt.system, cpt.Cores,
+            mrows = [cpt.Rank, cpt.System, cpt.Cores,
                      cpt.Rmax, cpt.Rpeak, cpt.Power]
     return rows
 
