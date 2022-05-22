@@ -5,6 +5,7 @@ import shutil
 import time
 import warnings
 from enum import Enum
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -19,14 +20,16 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
+from torch.utils.tensorboard import SummaryWriter
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR', default='imagenet',
-                    help='path to dataset (default: imagenet)')
+parser = argparse.ArgumentParser(
+    description='PyTorch Tiny-ImageNet-200 Training')
+parser.add_argument('-data', metavar='DIR', default='tiny-imagenet-200',
+                    help='path to dataset (default: tiny-imagenet-200)')
 parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                     choices=model_names,
                     help='model architecture: ' +
@@ -34,7 +37,7 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='resnet18',
                     ' (default: resnet18)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=90, type=int, metavar='N',
+parser.add_argument('--epochs', default=15, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -50,9 +53,9 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
 parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)',
                     dest='weight_decay')
-parser.add_argument('-p', '--print-freq', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--resume', default='', type=str, metavar='PATH',
+parser.add_argument('-p', '--print-freq', default=20, type=int,
+                    metavar='N', help='print frequency (default: 20)')
+parser.add_argument('--resume', default='C:/Users/86187/checkpoint10.pth.tar', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
@@ -75,13 +78,13 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
                          'N processes per node, which has N GPUs. This is the '
                          'fastest way to use PyTorch for either single node or '
                          'multi node data parallel training')
-
+#model = models.resnet18(pretrained=True)
 best_acc1 = 0
+writer = SummaryWriter()
 
 
 def main():
     args = parser.parse_args()
-
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
@@ -118,7 +121,6 @@ def main():
 def main_worker(gpu, ngpus_per_node, args):
     global best_acc1
     args.gpu = gpu
-
     if args.gpu is not None:
         print("Use GPU: {} for training".format(args.gpu))
 
@@ -135,9 +137,17 @@ def main_worker(gpu, ngpus_per_node, args):
     if args.pretrained:
         print("=> using pre-trained model '{}'".format(args.arch))
         model = models.__dict__[args.arch](pretrained=True)
+        # Finetune Final few layers to adjust for tiny imagenet input
+        model.avgpool = nn.AdaptiveAvgPool2d(1)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, 200)
     else:
         print("=> creating model '{}'".format(args.arch))
         model = models.__dict__[args.arch]()
+        # Finetune Final few layers to adjust for tiny imagenet input
+        model.avgpool = nn.AdaptiveAvgPool2d(1)
+        num_ftrs = model.fc.in_features
+        model.fc = nn.Linear(num_ftrs, 200)
 
     if not torch.cuda.is_available():
         print('using CPU, this will be slow')
@@ -174,13 +184,12 @@ def main_worker(gpu, ngpus_per_node, args):
 
     # define loss function (criterion), optimizer, and learning rate scheduler
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
-
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -208,19 +217,22 @@ def main_worker(gpu, ngpus_per_node, args):
     cudnn.benchmark = True
 
     # Data loading code
-    traindir = os.path.join(args.data, 'train')
-    valdir = os.path.join(args.data, 'val')
+    dir = 'C:\\Users\\86187\\Documents\\GitHub\\Weiczh-s-1st\\hw2tinyimage'
+    traindir = os.path.join(dir, args.data, 'train')
+    valdir = os.path.join(dir, args.data, 'val')
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
-            transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
+            # transforms.RandomVerticalFlip(),
+            # transforms.RandomRotation(10),
             transforms.ToTensor(),
             normalize,
-        ]))
+        ])
+    )
 
     if args.distributed:
         train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -234,28 +246,27 @@ def main_worker(gpu, ngpus_per_node, args):
         num_workers=args.workers, pin_memory=True, sampler=train_sampler)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ])),
+        datasets.ImageFolder(valdir,
+                             transforms.Compose([
+                                 transforms.ToTensor(),
+                                 normalize,
+                             ])),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
     if args.evaluate:
-        validate(val_loader, model, criterion, args)
+        validate(val_loader, model, criterion, 1, args)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             train_sampler.set_epoch(epoch)
-
+        print('lr=', optimizer.state_dict()[
+              'param_groups'][0]['lr'])  # print the lr
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, args)
-
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, args)
+        acc1 = validate(val_loader, model, criterion, epoch, args)
 
         scheduler.step()
 
@@ -273,6 +284,16 @@ def main_worker(gpu, ngpus_per_node, args):
                 'optimizer': optimizer.state_dict(),
                 'scheduler': scheduler.state_dict()
             }, is_best)
+            if epoch in [4, 9, 14]:  # save checkpoint at the epoch we want
+                torch.save({
+                    'epoch': epoch + 1,
+                    'arch': args.arch,
+                    'state_dict': model.state_dict(),
+                    'best_acc1': best_acc1,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict()
+                }, 'checkpoint'+str(epoch+1)+'.pth.tar')
+    writer.close()
 
 
 def train(train_loader, model, criterion, optimizer, epoch, args):
@@ -320,9 +341,11 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
         if i % args.print_freq == 0:
             progress.display(i)
+    writer.add_scalar('Loss_train', losses.avg, epoch)
+    writer.add_scalar('Acc5_train', top5.avg, epoch)
 
 
-def validate(val_loader, model, criterion, args):
+def validate(val_loader, model, criterion, epoch, args):
     batch_time = AverageMeter('Time', ':6.3f', Summary.NONE)
     losses = AverageMeter('Loss', ':.4e', Summary.NONE)
     top1 = AverageMeter('Acc@1', ':6.2f', Summary.AVERAGE)
@@ -352,7 +375,6 @@ def validate(val_loader, model, criterion, args):
             losses.update(loss.item(), images.size(0))
             top1.update(acc1[0], images.size(0))
             top5.update(acc5[0], images.size(0))
-
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
@@ -361,7 +383,8 @@ def validate(val_loader, model, criterion, args):
                 progress.display(i)
 
         progress.display_summary()
-
+    writer.add_scalar('Loss_val', losses.avg, epoch)
+    writer.add_scalar('Acc5_val', top5.avg, epoch)
     return top1.avg
 
 
