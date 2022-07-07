@@ -11,7 +11,7 @@ import os
 
 ONEOVERSQRT2PI = 1.0 / math.sqrt(2 * math.pi)
 
-color1 = 'red'
+color1 = 'gan'
 color2 = 'black'
 color3 = 'royalblue'
 font2 = 23
