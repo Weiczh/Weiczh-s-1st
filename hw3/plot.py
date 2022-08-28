@@ -83,9 +83,9 @@ def plotting():
 
 
 if __name__ == '__main__':
-    choice = 'pdn'
+    choice = 'gan'
     checkpoint = torch.load('check_' + choice + '.pth')
     start = checkpoint['time']
     records = checkpoint['records']
-
+    print(color1)
     plotting()
